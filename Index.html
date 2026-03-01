@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iAgro - Rice Precision</title>
+    <style>
+        :root { --primary: #2c3e50; --agro: #27ae60; --warn: #f1c40f; --danger: #e74c3c; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: #f4f7f6; color: var(--primary); }
+        header { background: var(--agro); color: white; padding: 1.5rem; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { max-width: 500px; margin: 20px auto; padding: 20px; }
+        
+        /* Interface da Câmera */
+        #viewport { width: 100%; border-radius: 15px; overflow: hidden; background: #000; position: relative; box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+        video, canvas { width: 100%; display: block; }
+        
+        /* Overlay de Mira */
+        .target-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                      width: 200px; height: 200px; border: 2px dashed rgba(255,255,255,0.5); border-radius: 10px; }
+
+        .controls { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+        button { padding: 15px; border: none; border-radius: 10px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-main { background: var(--agro); color: white; }
+        .btn-sec { background: #ddd; color: #333; }
+
+        /* Resultados */
+        #result-area { display: none; margin-top: 20px; padding: 20px; border-radius: 10px; background: white; border-top: 5px solid var(--agro); }
+        .status-tag { display: inline-block; padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; margin-bottom: 10px; }
+        .progress-mini { height: 10px; background: #eee; border-radius: 5px; overflow: hidden; margin: 10px 0; }
+        .bar { height: 100%; width: 0%; background: var(--agro); transition: 1s ease-out; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1 style="margin:0; font-size: 1.5rem;">iAgro | Rice Scan</h1>
+    <p style="margin:0; font-size: 0.8rem; opacity: 0.8;">Análise de Nitrogênio e Estresse Hídrico</p>
+</header>
+
+<div class="container">
+    <div id="viewport">
+        <div class="target-box" id="guide"></div>
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+    </div>
+
+    <div class="controls">
+        <button class="btn-main" id="btn-scan" onclick="processRice()">ANALISAR LAVOURA</button>
+        <button class="btn-sec" id="btn-reset" onclick="resetApp()" style="display:none;">NOVA AMOSTRA</button>
+    </div>
+
+    <div id="result-area">
+        <div id="status-label"></div>
+        <h2 id="health-pct" style="margin:0; font-size: 2rem;">0%</h2>
+        <p style="font-size: 0.9rem; color: #666;">Vigor Vegetativo (ExG Index)</p>
+        <div class="progress-mini"><div class="bar" id="result-bar"></div></div>
+        <hr>
+        <p id="recommendation" style="font-style: italic; font-size: 0.9rem;"></p>
+    </div>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const resultArea = document.getElementById('result-area');
+    const btnScan = document.getElementById('btn-scan');
+    const btnReset = document.getElementById('btn-reset');
+    const bar = document.getElementById('result-bar');
+
+    // Inicializa Câmera
+    async function initCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment' }, audio: false 
+            });
+            video.srcObject = stream;
+        } catch (err) {
+            alert("Acesse via HTTPS para usar a câmera.");
+        }
+    }
+
+    function processRice() {
+        // Captura o frame atual
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+
+        // Lógica de Processamento de Imagem (Simulação de Clorofilômetro)
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let points = 0;
+        let totalGreen = 0;
+
+        // Analisa o centro da imagem (área da mira)
+        for (let i = 0; i < imgData.length; i += 40) {
+            const r = imgData[i];
+            const g = imgData[i+1];
+            const b = imgData[i+2];
+
+            // Algoritmo ExG (Excesso de Verde) - Usado em Drones Agrícolas
+            const exg = (2 * g - r - b);
+            
+            if (exg > 25) { // É uma folha de arroz
+                // No Arroz: Verde profundo (g < 140) é rico em N. Verde claro (g > 160) é deficiente.
+                totalGreen += (255 - g); 
+                points++;
+            }
+        }
+
+        // Calcula Score (0 a 100)
+        const score = points > 0 ? Math.min(Math.max((totalGreen / points) * 0.8, 10), 98) : 0;
+
+        showResults(score);
+    }
+
+    function showResults(score) {
+        video.style.display = 'none';
+        canvas.style.display = 'block';
+        document.getElementById('guide').style.display = 'none';
+        btnScan.style.display = 'none';
+        btnReset.style.display = 'block';
+        resultArea.style.display = 'block';
+
+        const label = document.getElementById('status-label');
+        const rec = document.getElementById('recommendation');
+        const h1 = document.getElementById('health-pct');
+
+        h1.innerText = score.toFixed(1) + "%";
+        setTimeout(() => bar.style.width = score + "%", 100);
+
+        if (score > 75) {
+            label.innerHTML = '<span class="status-tag" style="background:#eaffea; color:var(--agro);">VIGOR EXCELENTE</span>';
+            label.style.color = "var(--agro)";
+            rec.innerText = "Níveis de Nitrogênio ideais. Não aplicar cobertura agora. Próxima checagem em 7 dias.";
+            resultArea.style.borderTopColor = "var(--agro)";
+        } else if (score > 40) {
+            label.innerHTML = '<span class="status-tag" style="background:#fff3cd; color:#856404;">DÉFICIT MODERADO</span>';
+            rec.innerText = "Início de clorose. Recomendado aplicação de 40kg/ha de Ureia para garantir o perfilhamento.";
+            resultArea.style.borderTopColor = "var(--warn)";
+        } else {
+            label.innerHTML = '<span class="status-tag" style="background:#f8d7da; color:var(--danger);">ALERTA CRÍTICO</span>';
+            rec.innerText = "Estresse hídrico ou nutricional severo detectado. Verificar lâmina d'água e aplicar reforço de NPK.";
+            resultArea.style.borderTopColor = "var(--danger)";
+        }
+    }
+
+    function resetApp() {
+        video.style.display = 'block';
+        canvas.style.display = 'none';
+        document.getElementById('guide').style.display = 'block';
+        btnScan.style.display = 'block';
+        btnReset.style.display = 'none';
+        resultArea.style.display = 'none';
+        bar.style.width = "0%";
+    }
+
+    initCamera();
+</script>
+</body>
+</html>
